@@ -10,10 +10,38 @@ echo "Luaos- Build System Initialization"
 echo "========================================="
 echo ""
 
+# Check if luaos.img already exists
+if [ -f "luaos.img" ]; then
+    echo "[!] WARNING: luaos.img already exists!"
+    echo ""
+    echo "This will ERASE and REPLACE your existing Luaos- installation."
+    echo ""
+    read -p "Do you want to continue? (yes/no): " response
+    
+    case "$response" in
+        [yY][eE][sS]|[yY])
+            echo ""
+            echo "[*] Proceeding with installation..."
+            sleep 2
+            ;;
+        *)
+            echo ""
+            echo "[-] Installation cancelled."
+            exit 0
+            ;;
+    esac
+else
+    echo "[*] No existing installation found. Proceeding..."
+    sleep 1
+fi
+
+echo ""
+
 # Create main directory structure
 echo "[*] Creating main directories..."
 mkdir -p scripts
 mkdir -p rootfs
+sleep 1
 
 # Create mkdir.sh - generates rootfs directory structure
 echo "[*] Generating mkdir.sh..."
@@ -42,6 +70,7 @@ done
 echo "[+] Rootfs structure created successfully"
 EOF
 chmod +x mkdir.sh
+sleep 1
 
 # Create build.sh - main builder script
 echo "[*] Generating build.sh..."
@@ -68,25 +97,39 @@ for cmd in lua luarocks busybox cpio dd; do
     fi
 done
 echo "[+] All dependencies found"
+sleep 1
 
 # Clean previous build
 echo "[*] Cleaning previous build..."
 rm -rf "$ROOTFS" "$DISK_IMAGE" "$INITRAMFS"
+sleep 1
 
 # Create rootfs structure
 echo "[*] Creating rootfs structure..."
 bash mkdir.sh
+sleep 1
 
 # Copy Lua scripts
 echo "[*] Installing Lua scripts..."
 mkdir -p "$ROOTFS"/scripts
 cp -r scripts/* "$ROOTFS"/scripts/ 2>/dev/null || true
+sleep 1
 
 # Install Lua and dependencies
 echo "[*] Installing Lua runtime..."
 cp /usr/bin/lua "$ROOTFS"/bin/ 2>/dev/null || true
 cp -r /usr/lib/lua "$ROOTFS"/usr/lib/ 2>/dev/null || true
 cp -r /usr/lib/x86_64-linux-gnu/lua* "$ROOTFS"/usr/lib/x86_64-linux-gnu/ 2>/dev/null || true
+sleep 1
+
+# Install LFS (Lua File System) module
+echo "[*] Installing Lua File System module..."
+if command -v luarocks &> /dev/null; then
+    luarocks install --tree "$ROOTFS"/usr lfs 2>/dev/null || true
+else
+    echo "[!] Warning: luarocks not found, LFS module may not be available"
+fi
+sleep 1
 
 # Install BusyBox
 echo "[*] Installing BusyBox..."
@@ -97,6 +140,7 @@ for cmd in ash sh ls cat grep cp mv rm mkdir touch; do
     ln -sf busybox $cmd 2>/dev/null || true
 done
 cd - > /dev/null
+sleep 1
 
 # Create essential configuration files
 echo "[*] Creating configuration files..."
@@ -122,6 +166,8 @@ cat > "$ROOTFS"/etc/group << 'GROUP'
 root:x:0:
 GROUP
 
+sleep 1
+
 # Create init script
 echo "[*] Creating init script..."
 cat > "$ROOTFS"/sbin/init << 'INIT'
@@ -136,120 +182,33 @@ mknod -m 666 /dev/tty c 5 0
 mknod -m 666 /dev/ttyS0 c 4 0
 mknod -m 644 /dev/null c 1 3
 
+export LUA_PATH="/scripts/?.lua;/usr/lib/lua/5.1/?.lua;/usr/share/lua/5.1/?.lua;;"
+export LUA_CPATH="/usr/lib/lua/5.1/?.so;/usr/lib/x86_64-linux-gnu/lua*/?.so;;"
+
 echo "Luaos- Initializing..."
 /bin/lua /scripts/init.lua
 INIT
 chmod +x "$ROOTFS"/sbin/init
 
-# Create config.lua
-echo "[*] Creating Lua configuration..."
-cat > "$ROOTFS"/scripts/config.lua << 'CONFIG'
--- scripts/config.lua
--- System configuration for Luaos-
-
-local config = {}
-
-function config.load()
-    return {
-        theme = "default",
-        color_prompt = "\27[1;32m",
-        color_reset = "\27[0m",
-        color_error = "\27[1;31m",
-        color_success = "\27[1;32m",
-        shell_prompt = "luaos> ",
-        editor_name = "Luano",
-        show_ascii_art = true
-    }
-end
-
-function config.save(cfg)
-    -- Save configuration if needed
-end
-
-return config
-CONFIG
-
-# Create daemon.lua module
-echo "[*] Creating daemon module..."
-cat > "$ROOTFS"/scripts/daemon.lua << 'DAEMON'
--- scripts/daemon.lua
--- Daemon management module
-
-local daemon = {}
-
-function daemon.start(name)
-    local status_file = "/daemons/" .. name .. "/status"
-    local f = io.open(status_file, "w")
-    if f then
-        f:write("running\n")
-        f:close()
-        return true
-    end
-    return false
-end
-
-function daemon.stop(name)
-    local status_file = "/daemons/" .. name .. "/status"
-    local f = io.open(status_file, "w")
-    if f then
-        f:write("stopped\n")
-        f:close()
-        return true
-    end
-    return false
-end
-
-function daemon.status(name)
-    local status_file = "/daemons/" .. name .. "/status"
-    local f = io.open(status_file, "r")
-    if f then
-        local status = f:read("*l")
-        f:close()
-        return status or "unknown"
-    end
-    return "unknown"
-end
-
-return daemon
-DAEMON
-
-# Create init.lua
-echo "[*] Creating init.lua..."
-cat > "$ROOTFS"/scripts/init.lua << 'INITLUA'
--- scripts/init.lua
--- Initialization script for Luaos-
-
-local config = require("scripts.config")
-
-local cfg = config.load()
-
-if cfg.show_ascii_art then
-    print([[
-    ╔════════════════════════════════╗
-    ║      Luaos- Operating System   ║
-    ║      Lua-Based & Lightweight   ║
-    ╚════════════════════════════════╝
-    ]])
-end
-
-print("Loading shell...")
-dofile("scripts/shell.lua")
-INITLUA
+sleep 1
 
 # Create rootfs archive
 echo "[*] Creating initramfs..."
 cd "$ROOTFS"
 find . -print0 | cpio --null -o --format=newc | gzip > "../$INITRAMFS"
 cd - > /dev/null
+sleep 1
 
 # Create disk image
 echo "[*] Creating disk image..."
 dd if=/dev/zero of="$DISK_IMAGE" bs=1M count=256
 mkfs.ext4 -F "$DISK_IMAGE"
+sleep 1
 
 # Embed initramfs into disk image
 echo "[*] Embedding initramfs into disk image..."
 dd if="$INITRAMFS" of="$DISK_IMAGE" bs=512 seek=2048 conv=notrunc
+sleep 1
 
 echo ""
 echo "========================================="
@@ -265,6 +224,7 @@ echo "  linux /initramfs.cpio.gz root=/dev/sda1 console=ttyS0 rw"
 echo ""
 EOF
 chmod +x build.sh
+sleep 1
 
 # Create shell.lua
 echo "[*] Generating scripts/shell.lua..."
@@ -272,8 +232,8 @@ cat > scripts/shell.lua << 'SHELL'
 -- scripts/shell.lua
 -- Interactive shell with command execution
 
-local config = require("scripts.config")
-local daemon = require("scripts.daemon")
+local config = require("config")
+local daemon = require("daemon")
 
 -- Load configuration
 local cfg = config.load()
@@ -297,14 +257,18 @@ function builtins.cd(args)
         args[1] = os.getenv("HOME") or "/root"
     end
     
+    local lfs = require("lfs")
     local target = args[1]
-    local success = os.execute("cd " .. target)
     
-    if success == 0 then
+    local ok, err = pcall(function()
+        lfs.chdir(target)
+    end)
+    
+    if ok then
         os.setenv("PWD", target)
         return 0
     else
-        io.stderr:write("cd: cannot access '" .. target .. "'\n")
+        io.stderr:write("cd: cannot access '" .. target .. "': " .. tostring(err) .. "\n")
         return 1
     end
 end
@@ -312,8 +276,8 @@ end
 function builtins.ls(args)
     local path = args[1] or "."
     local cmd = "ls " .. table.concat(args, " ")
-    os.execute(cmd)
-    return 0
+    local success = os.execute(cmd)
+    return success == 0 and 0 or 1
 end
 
 function builtins.cat(args)
@@ -322,6 +286,7 @@ function builtins.cat(args)
         return 1
     end
     
+    local exit_code = 0
     for _, file in ipairs(args) do
         local f = io.open(file, "r")
         if f then
@@ -329,9 +294,10 @@ function builtins.cat(args)
             f:close()
         else
             io.stderr:write("cat: cannot open '" .. file .. "'\n")
+            exit_code = 1
         end
     end
-    return 0
+    return exit_code
 end
 
 function builtins.mkdir(args)
@@ -340,10 +306,19 @@ function builtins.mkdir(args)
         return 1
     end
     
+    local lfs = require("lfs")
+    local exit_code = 0
+    
     for _, dir in ipairs(args) do
-        os.execute("mkdir -p " .. dir)
+        local ok, err = pcall(function()
+            lfs.mkdir(dir)
+        end)
+        if not ok then
+            io.stderr:write("mkdir: cannot create directory '" .. dir .. "': " .. tostring(err) .. "\n")
+            exit_code = 1
+        end
     end
-    return 0
+    return exit_code
 end
 
 function builtins.touch(args)
@@ -352,10 +327,17 @@ function builtins.touch(args)
         return 1
     end
     
+    local exit_code = 0
     for _, file in ipairs(args) do
-        os.execute("touch " .. file)
+        local f = io.open(file, "a")
+        if f then
+            f:close()
+        else
+            io.stderr:write("touch: cannot create '" .. file .. "'\n")
+            exit_code = 1
+        end
     end
-    return 0
+    return exit_code
 end
 
 function builtins.rm(args)
@@ -364,16 +346,24 @@ function builtins.rm(args)
         return 1
     end
     
-    os.execute("rm " .. table.concat(args, " "))
+    local lfs = require("lfs")
+    local exit_code = 0
+    
+    for _, file in ipairs(args) do
+        local ok, err = pcall(function()
+            os.remove(file)
+        end)
+        if not ok then
+            io.stderr:write("rm: cannot remove '" .. file .. "': " .. tostring(err) .. "\n")
+            exit_code = 1
+        end
+    end
+    return exit_code
+end
+
+function builtins.clear(args)
+    os.execute("clear")
     return 0
-end
-
-function builtins.exit(args)
-    os.exit(0)
-end
-
-function builtins.quit(args)
-    os.exit(0)
 end
 
 function builtins.help(args)
@@ -392,9 +382,12 @@ function builtins.help(args)
     return 0
 end
 
-function builtins.clear(args)
-    os.execute("clear")
-    return 0
+function builtins.exit(args)
+    os.exit(0)
+end
+
+function builtins.quit(args)
+    os.exit(0)
 end
 
 -- Parse command line into command and arguments
@@ -426,8 +419,9 @@ local function execute(input)
     end
     
     -- Try to execute as system command
-    local success = os.execute(cmd .. " " .. table.concat(args, " "))
-    return success or 1
+    local full_cmd = cmd .. " " .. table.concat(args, " ")
+    local success = os.execute(full_cmd)
+    return success == 0 and 0 or 1
 end
 
 -- Main shell loop
@@ -443,12 +437,16 @@ local function main()
         
         if input then
             execute(input)
+        else
+            -- EOF or error reading input
+            break
         end
     end
 end
 
 main()
 SHELL
+sleep 1
 
 # Create config.lua in scripts
 echo "[*] Creating scripts/config.lua..."
@@ -477,6 +475,7 @@ end
 
 return config
 CONFIG
+sleep 1
 
 # Create daemon.lua in scripts
 echo "[*] Creating scripts/daemon.lua..."
@@ -521,6 +520,7 @@ end
 
 return daemon
 DAEMON
+sleep 1
 
 # Create init.lua in scripts
 echo "[*] Creating scripts/init.lua..."
@@ -528,7 +528,11 @@ cat > scripts/init.lua << 'INITLUA'
 -- scripts/init.lua
 -- Initialization script for Luaos-
 
-local config = require("scripts.config")
+-- Set up package paths for module loading
+package.path = "/scripts/?.lua;/usr/lib/lua/5.1/?.lua;/usr/share/lua/5.1/?.lua;;"
+package.cpath = "/usr/lib/lua/5.1/?.so;/usr/lib/x86_64-linux-gnu/lua*/?.so;;"
+
+local config = require("config")
 
 local cfg = config.load()
 
@@ -540,25 +544,3 @@ if cfg.show_ascii_art then
     ╚════════════════════════════════╝
     ]])
 end
-
-print("Loading shell...")
-dofile("scripts/shell.lua")
-INITLUA
-
-echo ""
-echo "========================================="
-echo "[+] Initialization completed!"
-echo "========================================="
-echo ""
-echo "Next steps:"
-echo "  1. Review the generated scripts:"
-echo "     - build.sh (main build script)"
-echo "     - mkdir.sh (rootfs structure)"
-echo "     - scripts/ (Lua modules)"
-echo ""
-echo "  2. Run the build:"
-echo "     bash build.sh"
-echo ""
-echo "  3. Boot in v86 with:"
-echo "     linux /initramfs.cpio.gz root=/dev/sda1 console=ttyS0 rw"
-echo ""
