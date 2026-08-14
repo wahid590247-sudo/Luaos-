@@ -4,3 +4,5 @@ lua os is made for the v86 web emulator:copy.sh
 this is open source…made by a young developer
 please note:there will be mistakes+bugs 
 because this is made by a young dev
+this is capable of running on a toaster and you could try to port it
+I did think about using luau but who cares
